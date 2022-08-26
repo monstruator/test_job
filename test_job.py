@@ -4,7 +4,7 @@ import sqlite3
 from datetime import date, datetime
 import time
 from progress.bar import IncrementalBar
-
+import logging
 
 def benchmark(func):
     import time
@@ -13,80 +13,9 @@ def benchmark(func):
         start = time.time()
         return_value = func(*args, **kwargs)
         end = time.time()
-        print('[*] Время выполнения: {} секунд.'.format(end-start))
+        logging.info('execution time: {} seconds.'.format(end-start))
         return return_value
     return wrapper
-
-def search_all_crime_type(): #17084 варианта
-    crime_type = []
-    with open('police-department-calls-for-service.csv', mode='r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        for row in csv_reader:
-            if not row[1] in crime_type:
-                crime_type.append(row[1])
-    crime_type.remove(crime_type[0])
-    return crime_type
-
-
-def search_all_disposition():
-    disposition = []
-    with open('police-department-calls-for-service.csv', mode='r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        for row in csv_reader:
-            if not row[7] in disposition:
-                disposition.append(row[7])
-                print(row[7])
-    disposition.remove(disposition[0])
-    return disposition
-
-def fill_table_disposition():
-    bd = Database()
-    bd.create_table_disposition()
-    dispositions = search_all_disposition()
-    print(f'количество dispositions {len(dispositions)}')
-    print(dispositions)
-    for disposition in dispositions:
-        bd.insert_to_table_disposition(disposition)
-
-def search_all_cities():
-    cities = []
-    with open('police-department-calls-for-service.csv', mode='r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        for row in csv_reader:
-            if not row[9] in cities:
-                cities.append(row[9])
-
-    cities.remove(cities[0])
-    return cities
-
-def fill_table_city():
-    bd = Database()
-    bd.create_table_city()
-    cities = search_all_cities()
-    print(f'количество cities {len(cities)}')
-    print(cities)
-    for city in cities:
-        bd.insert_to_table_city(city)
-
-def search_all_address_types():
-    address_types = []
-    with open('police-department-calls-for-service.csv', mode='r') as csv_file:
-        csv_reader = csv.reader(csv_file)
-        for row in csv_reader:
-            if not row[12] in address_types:
-                address_types.append(row[12])
-
-    address_types.remove(address_types[0])
-    return address_types
-
-def fill_table_address_types():
-    bd = Database()
-    bd.create_table_address_types()
-    address_types = search_all_address_types()
-    print(f'количество address_types {len(address_types)}')
-    print(address_types)
-    for address_type in address_types:
-        bd.insert_to_table_address_types(address_type)   
 
 class Database:
     conn = None
@@ -95,10 +24,21 @@ class Database:
     def __init__(self):   
         self.conn = sqlite3.connect('calls-for-service.db')
         self.cur = self.conn.cursor()
-        self.create_table_calls()
+        
 
+    def clear_data(self):
+        logging.info('clear data from DB')
+        self.cur.execute("DELETE FROM Calls;")
+        self.conn.commit()
+        self.cur.execute("DELETE FROM Disposition;")
+        self.conn.commit()
+        self.cur.execute("DELETE FROM City;")
+        self.conn.commit()
+        self.cur.execute("DELETE FROM Address_type;")
+        self.conn.commit()
+               
     def create_table_calls(self):
-        # id              INTEGER PRIMARY KEY,
+        logging.info('create table Calls')
         # ['Crime Id', 'Original Crime Type Name', 'Report Date', 'Call Date', 'Offense Date', 'Call Time', 'Call Date Time', 'Disposition', 'Address', 'City', 'State', 'Agency Id', 'Address Type', 'Common Location']
         create_table_query = """CREATE TABLE IF NOT EXISTS Calls(
                 id              INTEGER PRIMARY KEY,
@@ -121,7 +61,8 @@ class Database:
         self.conn.commit()
 
     def create_table_disposition(self):
-        create_table_query = """CREATE TABLE IF NOT EXISTS Disposition(
+        logging.info('create table Disposition')
+        create_table_query = """CREATE TABLE  IF NOT EXISTS Disposition(
                 id              INTEGER PRIMARY KEY,
                 Disposition            TEXT
                 )"""
@@ -129,7 +70,8 @@ class Database:
         self.conn.commit()
 
     def create_table_city(self):
-        create_table_query = """CREATE TABLE IF NOT EXISTS City(
+        logging.info('create table City')
+        create_table_query = """CREATE TABLE  IF NOT EXISTS City(
                 id              INTEGER PRIMARY KEY,
                 City            TEXT
                 )"""
@@ -137,9 +79,10 @@ class Database:
         self.conn.commit()
 
     def create_table_address_types(self):
+        logging.info('create table Address_type')
         create_table_query = """CREATE TABLE IF NOT EXISTS Address_type(
                 id              INTEGER PRIMARY KEY,
-                Address_type     TEXT
+                Address_type    TEXT
                 )"""
         self.cur.execute(create_table_query)
         self.conn.commit()
@@ -149,7 +92,7 @@ class Database:
             self.cur.execute(insert_table_query, (Disposition,))
             self.conn.commit()
 
-    def insert_to_table_city(self,City):
+    def insert_to_table_cities(self,City):
         insert_table_query = """INSERT INTO City (City) VALUES (?);"""
         self.cur.execute(insert_table_query, (City,))
         self.conn.commit()
@@ -165,12 +108,31 @@ class Database:
         self.conn.commit()
 # ----------------------------------------------------------------------------------------------------------------------------------
     @benchmark
-    def select_from_table_calls(self, date_from, date_to, page=None):
-        rez = []
-        select_from_calls = "SELECT * FROM Calls WHERE Report_Date >= date(?) AND Report_Date <= date(?) order by Report_Date;"
-        self.cur.execute(select_from_calls,(date_from,date_to,))
-        all_results = self.cur.fetchall()
+    def select_from_table_calls(self, date_from, date_to, page=None): #поиск в таблице Calls по дате между date_from и date_to
+        log_str = 'SEARCH CALL FROM ' + date_from + ' TO ' + date_to + '. PAGE '
+        if page == None:
+            log_str = log_str + 'NOT SET'
+        elif page >= 0:
+            log_str = log_str + str(page)
+        else:
+            page = 0
+            log_str = log_str + str(page)
+        logging.info(log_str)
+        rez = {
+            'total_records' : 0,
+            'records' : []
+        }
+        try:
+            select_from_calls = "SELECT * FROM Calls WHERE Report_Date >= date(?) AND Report_Date <= date(?) order by Report_Date;"
+            self.cur.execute(select_from_calls,(date_from,date_to,))
+            all_results = self.cur.fetchall()
+        except:
+            logging.info('ERROR SELECT FROM DB')
+            rez['total_records'] = 0
+            return None
 
+        rez['total_records'] = len(all_results)  
+        #заменим индексированные поля данными из связанных таблиц   
         cities = self.select_all_cities()
         address_types = self.select_all_address_types()
         dispositions = self.select_all_dispositions()
@@ -182,17 +144,18 @@ class Database:
             el[8] = dispositions[int(el[8])-1][1]
             el[10] = cities[int(el[10])-1][1]
             el[13] = address_types[int(el[13])-1][1]
-            rez.append(el)
+            rez['records'].append(el)
 
-        if page == None:
+        if page == None: #если page не задан, то отдаем все
             return(rez)
         else:
-            page_col = int(len(rez)/20)
+            page_col = int(rez['total_records']/20) #общее количество страниц
             if page > page_col:
                 page = page_col
         first = page*20
         last = (page+1)*20
-        rez = rez[first:last:1]
+        rez['records'] = rez['records'][first:last:1]
+        logging.info('FIND RECORDS: {}'.format(rez['total_records']))
         return(rez)
 #-----------------------------------------------------------------------------------------------------------------------------------
     def select_all_cities(self):
@@ -211,16 +174,70 @@ class Database:
         return(all_results)    
 
 @benchmark
-def load_to_db(num=None):
+def search_for_mini_table(): #заполнение вспомогательных таблиц для нормализации БД
+    logging.info('MAKE MINI TABLES')
+    dispositions = []
+    cities = []
+    address_types = []
+
+    with open('police-department-calls-for-service.csv', mode='r') as csv_file:
+        csv_reader = csv.reader(csv_file)
+        row_counter = 0
+        for row in csv_reader:              #поиск всех уникальных значений
+            row_counter = row_counter + 1  
+            # if not row[1] in crime_types: #17000 уникальных значений
+            #     crime_types.append(row[1])
+            if not row[7] in dispositions:
+                dispositions.append(row[7])
+            if not row[9] in cities:
+                cities.append(row[9]) 
+            if not row[12] in address_types:
+                address_types.append(row[12])      
+
+    dispositions.remove(dispositions[0])
+    cities.remove(cities[0])
+    address_types.remove(address_types[0])
+
+    bd = Database()
+    bd.create_table_calls()
+    bd.create_table_address_types()
+    bd.create_table_city()
+    bd.create_table_disposition()
+    bd.clear_data()
+
+   
+    for disposition in dispositions:
+        bd.insert_to_table_disposition(disposition)
+    for city in cities:
+        bd.insert_to_table_cities(city)
+    for address_type in address_types:
+        bd.insert_to_table_address_types(address_type)
+    return row_counter #вернем общее количество строк в файле
+
+@benchmark
+def load_to_db(num=None): #можно прочитать не весь файл, а заданное количество записей. по умолчанию читает все
+    rows = search_for_mini_table() #очистим БД и создадим вспомогательные таблицы для нормализации
+    if num == None:
+        num = rows
+    logging.info('LOAD DATA FROM CSV. ROWS TO READ {}'.format(num))
+    
     bd = Database()
     cities = bd.select_all_cities()
     address_types = bd.select_all_address_types()
     dispositions = bd.select_all_dispositions()
+
+    bar = IncrementalBar('Processing', max=100)
+    percent = int(num / 100)
+    counter = 0
     with open('police-department-calls-for-service.csv', mode='r') as csv_file:
         csv_reader = csv.reader(csv_file)
         line_count = 0
         columns = []
         for row in csv_reader:
+            counter = counter + 1
+            if counter == percent:
+                counter = 0
+                bar.next()
             if line_count == 0:
                 columns = row
             elif line_count == num:
@@ -239,20 +256,28 @@ def load_to_db(num=None):
                 bd.insert_to_table_calls(row)
             line_count = line_count + 1
         
-        print(f'количество колонок {len(columns)}')
-        print(f'количество строк {line_count}')
+    bar.finish()
 
 
+def main():
+    logging.basicConfig(
+        filename = "test_job.log",
+        level=logging.DEBUG,
+        format = "%(asctime)s - %(message)s",
+        datefmt='%H:%M:%S',
+        )
+    
+    # load_to_db(10000) #загрузка 10000 записей из CSV, если БД пустая
 
+    bd = Database() #подключение к БД
+    
+    records = bd.select_from_table_calls('2016-04-01','2016-04-03',2)
+    if records['total_records'] > 0:
+        for e in records["records"]:
+            # print(e)
+            logging.info('{}'.format(e))
+    else:
+        logging.info('CALLS NOT FOUND')
 
-# bd = Database()
-# records = bd.select_from_table_calls('2016-04-01','2016-04-03',0)
-# for e in records:
-#     print(e)
-
-# load_to_db(1000)
-# fill_table_address_types()
-
-# fill_table_disposition()
-
-
+if __name__ == "__main__":
+    main()
