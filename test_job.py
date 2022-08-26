@@ -24,7 +24,8 @@ class Database:
     def __init__(self):   
         self.conn = sqlite3.connect('calls-for-service.db')
         self.cur = self.conn.cursor()
-        
+        self.cur.execute("PRAGMA foreign_keys=on;")
+        self.conn.commit()
 
     def clear_data(self):
         logging.info('clear data from DB')
@@ -35,7 +36,7 @@ class Database:
         self.cur.execute("DELETE FROM City;")
         self.conn.commit()
         self.cur.execute("DELETE FROM Address_type;")
-        self.conn.commit()
+        self.conn.commit()     
                
     def create_table_calls(self):
         logging.info('create table Calls')
@@ -49,12 +50,12 @@ class Database:
                 Offense_Date    DATE,
                 Call_Time       DATETIME,
                 Call_Date_Time  DATETIME,
-                Disposition     INTEGER,
+                Disposition     INT     REFERENCES Disposition (id),
                 Address         TEXT,
-                City            INTEGER,
+                City_id         INT     REFERENCES City (id),
                 State           TEXT,
                 Agency_Id       INTEGER,
-                Address_Type    INTEGER,
+                Address_Type    INT     REFERENCES Address_type (id),
                 Common_Location TEXT
                 )"""
         self.cur.execute(create_table_query)
@@ -64,7 +65,7 @@ class Database:
         logging.info('create table Disposition')
         create_table_query = """CREATE TABLE  IF NOT EXISTS Disposition(
                 id              INTEGER PRIMARY KEY,
-                Disposition            TEXT
+                Disposition     TEXT
                 )"""
         self.cur.execute(create_table_query)
         self.conn.commit()
@@ -123,7 +124,28 @@ class Database:
             'records' : []
         }
         try:
-            select_from_calls = "SELECT * FROM Calls WHERE Report_Date >= date(?) AND Report_Date <= date(?) order by Report_Date;"
+            select_from_calls = """SELECT
+                        Calls.id,
+                        Crime_Id,
+                        Crime_Type,
+                        Report_Date,
+                        Call_Date,
+                        Offense_Date,
+                        Call_Time,
+                        Call_Date_Time,
+                        Disposition.Disposition,
+                        Address,
+                        City.City,
+                        State,
+                        Agency_Id,
+                        Address_Type.Address_Type,
+                        Common_Location 
+                    FROM Calls
+                    INNER JOIN City ON Calls.City_id = City.id
+                    INNER JOIN Address_type ON Calls.Address_Type = Address_type.id
+                    INNER JOIN Disposition ON Calls.Disposition = Disposition.id
+                    WHERE Report_Date >= date(?) AND Report_Date <= date(?) 
+                    ORDER by Report_Date """
             self.cur.execute(select_from_calls,(date_from,date_to,))
             all_results = self.cur.fetchall()
         except:
@@ -132,20 +154,8 @@ class Database:
             return None
 
         rez['total_records'] = len(all_results)  
-        #заменим индексированные поля данными из связанных таблиц   
-        cities = self.select_all_cities()
-        address_types = self.select_all_address_types()
-        dispositions = self.select_all_dispositions()
-
-        all_results = list(all_results)
- 
-        for el in all_results:
-            el = list(el)
-            el[8] = dispositions[int(el[8])-1][1]
-            el[10] = cities[int(el[10])-1][1]
-            el[13] = address_types[int(el[13])-1][1]
-            rez['records'].append(el)
-
+        rez['records'] = all_results
+        
         if page == None: #если page не задан, то отдаем все
             return(rez)
         else:
@@ -199,10 +209,10 @@ def search_for_mini_table(): #заполнение вспомогательны�
     address_types.remove(address_types[0])
 
     bd = Database()
-    bd.create_table_calls()
     bd.create_table_address_types()
     bd.create_table_city()
     bd.create_table_disposition()
+    bd.create_table_calls()
     bd.clear_data()
 
    
@@ -257,6 +267,10 @@ def load_to_db(num=None): #можно прочитать не весь файл,
             line_count = line_count + 1
         
     bar.finish()
+
+
+
+
 
 
 def main():
